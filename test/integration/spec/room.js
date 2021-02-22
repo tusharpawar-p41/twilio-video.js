@@ -586,129 +586,136 @@ describe('Room', function() {
     });
   });
 
-  [1, 2, 3, 4, 5].forEach(iteration => {
-    (defaults.topology !== 'peer-to-peer' ? describe.only : describe.skip)('"trackSwitched" events: Iteration: ' + iteration, () => {
-      let alice;
-      let bob;
-      let remoteBob;
-      let charlie;
-      let remoteCharlie;
-      let aliceRoom = null;
-      let bobRoom = null;
-      let charlieRoom = null;
-      let hiPriTrack;
-      let loPriTrack;
-      let loPriTrackPub;
+  [0, 5000].forEach(delay => {
+    [1, 2, 3, 4, 5].forEach(iteration => {
+      (defaults.topology !== 'peer-to-peer' ? describe.only : describe.skip)(`"trackSwitched" events: Iteration: ${iteration}, delay=${delay}`, () => {
+        let alice;
+        let bob;
+        let remoteBob;
+        let charlie;
+        let remoteCharlie;
+        let aliceRoom = null;
+        let bobRoom = null;
+        let charlieRoom = null;
+        let hiPriTrack;
+        let loPriTrack;
+        let loPriTrackPub;
 
-      before(async () => {
-        let thoseRooms;
-        [, aliceRoom, thoseRooms] = await setup({
-          testOptions: { tracks: [], bandwidthProfile: { video: { maxTracks: 1 } } },
-          otherOptions: { tracks: [] },
-          participantNames: ['Alice', 'Bob', 'Charlie'],
-          nTracks: 0
+        before(async () => {
+          let thoseRooms;
+          [, aliceRoom, thoseRooms] = await setup({
+            testOptions: { tracks: [], bandwidthProfile: { video: { maxTracks: 1 } } },
+            otherOptions: { tracks: [] },
+            participantNames: ['Alice', 'Bob', 'Charlie'],
+            nTracks: 0
+          });
+
+          [bobRoom, charlieRoom] = thoseRooms;
+          alice = aliceRoom.localParticipant;
+          bob = bobRoom.localParticipant;
+          charlie = charlieRoom.localParticipant;
+
+          console.log('Alice = ', alice.sid);
+          console.log('Bob = ', bob.sid);
+          console.log('Charlie = ', charlie.sid);
+
+          // Create a high priority LocalTrack for charlie.
+          hiPriTrack = await createLocalVideoTrack(smallVideoConstraints);
+
+          // Let bob publish a LocalTrack with low priority.
+          loPriTrack = await createLocalVideoTrack(smallVideoConstraints);
+
+          console.log('waiting before publishing bob\'s low priority track', delay);
+          await waitForSometime(delay);
+          const bobTrackPub = await waitFor(bob.publishTrack(loPriTrack, { priority: PRIORITY_LOW }), `${bob.sid} to publish LocalTrack: ${aliceRoom.sid}`);
+          remoteBob = aliceRoom.participants.get(bob.sid);
+          console.log('Bob\'s Track: ', bobTrackPub.trackSid);
+
+          await waitFor(tracksSubscribed(remoteBob, 1), `${alice.sid} to subscribe to Bob's RemoteTrack: ${aliceRoom.sid}`);
+          loPriTrackPub = Array.from(remoteBob.tracks.values())[0];
+          remoteCharlie = aliceRoom.participants.get(charlie.sid);
         });
 
-        [bobRoom, charlieRoom] = thoseRooms;
-        alice = aliceRoom.localParticipant;
-        bob = bobRoom.localParticipant;
-        charlie = charlieRoom.localParticipant;
+        after(async () => {
+          const roomSid = aliceRoom.sid;
+          [aliceRoom, bobRoom, charlieRoom].forEach(room => room && room.disconnect());
+          [hiPriTrack, loPriTrack].forEach(track => track && track.stop());
+          await completeRoom(roomSid);
+        });
 
-        console.log('Alice = ', alice.sid);
-        console.log('Bob = ', bob.sid);
-        console.log('Charlie = ', charlie.sid);
+        it('"trackSwitchedOff" fires on RemoteTrack ("switchedOff") RemoteTrackPublication, RemoteParticipant and Room', async () => {
+          // 1) RemoteTrack
+          const p1 = new Promise(resolve => loPriTrackPub.track.once('switchedOff', resolve));
 
-        // Create a high priority LocalTrack for charlie.
-        hiPriTrack = await createLocalVideoTrack(smallVideoConstraints);
+          // 2) RemoteTrackPublication
+          const p2 = new Promise(resolve => loPriTrackPub.once('trackSwitchedOff', track => {
+            assert.equal(track, loPriTrackPub.track, 'unexpected value for the RemoteTrack');
+            resolve();
+          }));
 
-        // Let bob publish a LocalTrack with low priority.
-        loPriTrack = await createLocalVideoTrack(smallVideoConstraints);
-        const bobTrackPub = await waitFor(bob.publishTrack(loPriTrack, { priority: PRIORITY_LOW }), `${bob.sid} to publish LocalTrack: ${aliceRoom.sid}`);
-        remoteBob = aliceRoom.participants.get(bob.sid);
-        console.log('Bob\'s Track: ', bobTrackPub.trackSid);
+          // 3) RemoteParticipant
+          const p3 = new Promise(resolve => remoteBob.once('trackSwitchedOff', (track, trackPub) => {
+            assert.equal(track, loPriTrackPub.track, 'unexpected value for the RemoteTrack');
+            assert.equal(trackPub, loPriTrackPub, 'unexpected value for the RemoteTrackPublication');
+            resolve();
+          }));
 
-        await waitFor(tracksSubscribed(remoteBob, 1), `${alice.sid} to subscribe to Bob's RemoteTrack: ${aliceRoom.sid}`);
-        loPriTrackPub = Array.from(remoteBob.tracks.values())[0];
-        remoteCharlie = aliceRoom.participants.get(charlie.sid);
-      });
+          // 4) Room
+          const p4 = new Promise(resolve => aliceRoom.once('trackSwitchedOff', (track, trackPub, participant) => {
+            assert.equal(track, loPriTrackPub.track, 'unexpected value for the RemoteTrack');
+            assert.equal(participant, remoteBob, 'unexpected value for the RemoteParticipant');
+            assert.equal(trackPub, loPriTrackPub, 'unexpected value for the RemoteTrackPublication');
+            resolve();
+          }));
 
-      after(async () => {
-        const roomSid = aliceRoom.sid;
-        [aliceRoom, bobRoom, charlieRoom].forEach(room => room && room.disconnect());
-        [hiPriTrack, loPriTrack].forEach(track => track && track.stop());
-        await completeRoom(roomSid);
-      });
+          console.log('waiting before publishing charlie\'s Hi priority track', delay);
+          // Induce a track switch off by having charlie publish a track with high priority.
+          const charlieTrackPub = await waitFor(charlie.publishTrack(hiPriTrack, { priority: PRIORITY_HIGH }), `${charlie.sid} to publish a high priority LocalTrack: ${aliceRoom.sid}`);
+          console.log('Charlie\'s Track: ', charlieTrackPub.trackSid);
 
-      it('"trackSwitchedOff" fires on RemoteTrack ("switchedOff") RemoteTrackPublication, RemoteParticipant and Room', async () => {
-        // 1) RemoteTrack
-        const p1 = new Promise(resolve => loPriTrackPub.track.once('switchedOff', resolve));
+          await waitFor(tracksSubscribed(remoteCharlie, 1), `${alice.sid} to subscribe to charlie's RemoteTrack ${hiPriTrack.sid}: ${aliceRoom.sid}`);
 
-        // 2) RemoteTrackPublication
-        const p2 = new Promise(resolve => loPriTrackPub.once('trackSwitchedOff', track => {
-          assert.equal(track, loPriTrackPub.track, 'unexpected value for the RemoteTrack');
-          resolve();
-        }));
+          // we should see track switch off event on all 4 objects.
+          await waitFor([p1, p2, p3, p4], `trackSwitchedOff to get fired on RemoteTrack, RemoteTrackPublication, participant and room: ${aliceRoom.sid}`);
+        });
 
-        // 3) RemoteParticipant
-        const p3 = new Promise(resolve => remoteBob.once('trackSwitchedOff', (track, trackPub) => {
-          assert.equal(track, loPriTrackPub.track, 'unexpected value for the RemoteTrack');
-          assert.equal(trackPub, loPriTrackPub, 'unexpected value for the RemoteTrackPublication');
-          resolve();
-        }));
+        it('"trackSwitchedOn" fires on RemoteTrack ("switchedOn"), RemoteTrackPublication, RemoteParticipant and Room', async () => {
+          // 1) RemoteTrack
+          const p1 = new Promise(resolve => loPriTrackPub.track.once('switchedOn', resolve));
 
-        // 4) Room
-        const p4 = new Promise(resolve => aliceRoom.once('trackSwitchedOff', (track, trackPub, participant) => {
-          assert.equal(track, loPriTrackPub.track, 'unexpected value for the RemoteTrack');
-          assert.equal(participant, remoteBob, 'unexpected value for the RemoteParticipant');
-          assert.equal(trackPub, loPriTrackPub, 'unexpected value for the RemoteTrackPublication');
-          resolve();
-        }));
+          // 2) RemoteTrackPublication
+          const p2 = new Promise(resolve => loPriTrackPub.once('trackSwitchedOn', track => {
+            assert.equal(track, loPriTrackPub.track, 'unexpected value for the RemoteTrack');
+            resolve();
+          }));
 
-        // Induce a track switch off by having charlie publish a track with high priority.
-        const charlieTrackPub = await waitFor(charlie.publishTrack(hiPriTrack, { priority: PRIORITY_HIGH }), `${charlie.sid} to publish a high priority LocalTrack: ${aliceRoom.sid}`);
-        console.log('Charlie\'s Track: ', charlieTrackPub.trackSid);
+          // 3) RemoteParticipant
+          const p3 = new Promise(resolve => remoteBob.once('trackSwitchedOn', (track, trackPub) => {
+            assert.equal(track, loPriTrackPub.track, 'unexpected value for the RemoteTrack');
+            assert.equal(trackPub, loPriTrackPub, 'unexpected value for the RemoteTrackPublication');
+            resolve();
+          }));
 
-        await waitFor(tracksSubscribed(remoteCharlie, 1), `${alice.sid} to subscribe to charlie's RemoteTrack ${hiPriTrack.sid}: ${aliceRoom.sid}`);
+          // 4) Room
+          const p4 = new Promise(resolve => aliceRoom.once('trackSwitchedOn', (track, trackPub, participant) => {
+            assert.equal(track, loPriTrackPub.track, 'unexpected value for the RemoteTrack');
+            assert.equal(participant, remoteBob, 'unexpected value for the RemoteParticipant');
+            assert.equal(trackPub, loPriTrackPub, 'unexpected value for the RemoteTrackPublication');
+            resolve();
+          }));
 
-        // we should see track switch off event on all 4 objects.
-        await waitFor([p1, p2, p3, p4], `trackSwitchedOff to get fired on RemoteTrack, RemoteTrackPublication, participant and room: ${aliceRoom.sid}`);
-      });
+          // Let Charlie unpublish the high priority LocalTrack.
+          // NOTE(mmalavalli): This test fails if charlie disconnects from the Room, which might
+          // be a potential bug.
+          console.log('waiting before un-publishing charlie\'s Hi priority track', delay);
+          charlie.unpublishTrack(hiPriTrack);
 
-      it('"trackSwitchedOn" fires on RemoteTrack ("switchedOn"), RemoteTrackPublication, RemoteParticipant and Room', async () => {
-        // 1) RemoteTrack
-        const p1 = new Promise(resolve => loPriTrackPub.track.once('switchedOn', resolve));
-
-        // 2) RemoteTrackPublication
-        const p2 = new Promise(resolve => loPriTrackPub.once('trackSwitchedOn', track => {
-          assert.equal(track, loPriTrackPub.track, 'unexpected value for the RemoteTrack');
-          resolve();
-        }));
-
-        // 3) RemoteParticipant
-        const p3 = new Promise(resolve => remoteBob.once('trackSwitchedOn', (track, trackPub) => {
-          assert.equal(track, loPriTrackPub.track, 'unexpected value for the RemoteTrack');
-          assert.equal(trackPub, loPriTrackPub, 'unexpected value for the RemoteTrackPublication');
-          resolve();
-        }));
-
-        // 4) Room
-        const p4 = new Promise(resolve => aliceRoom.once('trackSwitchedOn', (track, trackPub, participant) => {
-          assert.equal(track, loPriTrackPub.track, 'unexpected value for the RemoteTrack');
-          assert.equal(participant, remoteBob, 'unexpected value for the RemoteParticipant');
-          assert.equal(trackPub, loPriTrackPub, 'unexpected value for the RemoteTrackPublication');
-          resolve();
-        }));
-
-        // Let Charlie unpublish the high priority LocalTrack.
-        // NOTE(mmalavalli): This test fails if charlie disconnects from the Room, which might
-        // be a potential bug.
-        charlie.unpublishTrack(hiPriTrack);
-
-        // Alice should see track switch on event on all 4 objects.
-        await waitFor(p1, `Alice to receive "switchedOn" on Bob's RemoteVideoTrack: ${aliceRoom.sid}`);
-        await waitFor(p2, `Alice to receive "trackSwitchedOn" on Bob's RemoteTrackPublication: ${aliceRoom.sid}`);
-        await waitFor(p3, `Alice to receive "trackSwitchedOn" on Bob's RemoteParticipant: ${aliceRoom.sid}`);
-        await waitFor(p4, `Alice to receive "trackSwitchedOn" on the Room: ${aliceRoom.sid}`);
+          // Alice should see track switch on event on all 4 objects.
+          await waitFor(p1, `Alice to receive "switchedOn" on Bob's RemoteVideoTrack: ${aliceRoom.sid}`);
+          await waitFor(p2, `Alice to receive "trackSwitchedOn" on Bob's RemoteTrackPublication: ${aliceRoom.sid}`);
+          await waitFor(p3, `Alice to receive "trackSwitchedOn" on Bob's RemoteParticipant: ${aliceRoom.sid}`);
+          await waitFor(p4, `Alice to receive "trackSwitchedOn" on the Room: ${aliceRoom.sid}`);
+        });
       });
     });
   });
