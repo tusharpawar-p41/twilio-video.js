@@ -627,6 +627,7 @@ describe('Room', function() {
 
           console.log('waiting before publishing bob\'s low priority track', delay);
           await waitForSometime(delay);
+          console.log('done waiting before publishing bob\'s low priority track', delay);
           const bobTrackPub = await waitFor(bob.publishTrack(loPriTrack, { priority: PRIORITY_LOW }), `${bob.sid} to publish LocalTrack: ${aliceRoom.sid}`);
           remoteBob = aliceRoom.participants.get(bob.sid);
           console.log('Bob\'s Track: ', bobTrackPub.trackSid);
@@ -669,6 +670,9 @@ describe('Room', function() {
           }));
 
           console.log('waiting before publishing charlie\'s Hi priority track', delay);
+          await waitForSometime(delay);
+          console.log('done waiting before publishing charlie\'s Hi priority track', delay);
+
           // Induce a track switch off by having charlie publish a track with high priority.
           const charlieTrackPub = await waitFor(charlie.publishTrack(hiPriTrack, { priority: PRIORITY_HIGH }), `${charlie.sid} to publish a high priority LocalTrack: ${aliceRoom.sid}`);
           console.log('Charlie\'s Track: ', charlieTrackPub.trackSid);
@@ -708,6 +712,9 @@ describe('Room', function() {
           // NOTE(mmalavalli): This test fails if charlie disconnects from the Room, which might
           // be a potential bug.
           console.log('waiting before un-publishing charlie\'s Hi priority track', delay);
+          await waitForSometime(delay);
+          console.log('done waiting before un-publishing charlie\'s Hi priority track', delay);
+
           charlie.unpublishTrack(hiPriTrack);
 
           // Alice should see track switch on event on all 4 objects.
