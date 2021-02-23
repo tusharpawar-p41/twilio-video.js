@@ -625,9 +625,9 @@ describe('Room', function() {
           // Let bob publish a LocalTrack with low priority.
           loPriTrack = await createLocalVideoTrack(smallVideoConstraints);
 
-          console.log('waiting before publishing bob\'s low priority track', delay);
-          await waitForSometime(delay);
-          console.log('done waiting before publishing bob\'s low priority track', delay);
+          // console.log('waiting before publishing bob\'s low priority track', delay);
+          // await waitForSometime(delay);
+          // console.log('done waiting before publishing bob\'s low priority track', delay);
           const bobTrackPub = await waitFor(bob.publishTrack(loPriTrack, { priority: PRIORITY_LOW }), `${bob.sid} to publish LocalTrack: ${aliceRoom.sid}`);
           remoteBob = aliceRoom.participants.get(bob.sid);
           console.log('Bob\'s Track: ', bobTrackPub.trackSid);
@@ -669,9 +669,9 @@ describe('Room', function() {
             resolve();
           }));
 
-          console.log('waiting before publishing charlie\'s Hi priority track', delay);
-          await waitForSometime(delay);
-          console.log('done waiting before publishing charlie\'s Hi priority track', delay);
+          // console.log('waiting before publishing charlie\'s Hi priority track', delay);
+          // await waitForSometime(delay);
+          // console.log('done waiting before publishing charlie\'s Hi priority track', delay);
 
           // Induce a track switch off by having charlie publish a track with high priority.
           const charlieTrackPub = await waitFor(charlie.publishTrack(hiPriTrack, { priority: PRIORITY_HIGH }), `${charlie.sid} to publish a high priority LocalTrack: ${aliceRoom.sid}`);
