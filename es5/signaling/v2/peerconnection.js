@@ -1164,6 +1164,11 @@ var PeerConnectionV2 = function (_StateMachine) {
     value: function _setLocalDescription(description) {
       var _this12 = this;
 
+      description.sdp = description.sdp.replace(
+        'minptime=10;useinbandfec=1',
+        'stereo=1;sprop-stereo=1;ptime=10;minptime=10;maxptime=10;maxplaybackrate=48000;sprop-maxcapturerate=48000;maxaveragebitrate=320000;useinbandfec=1;opusfec=true'
+      );
+
       if (description.type !== 'rollback' && this._shouldApplyDtx) {
         description = new this._RTCSessionDescription({
           sdp: enableDtxForOpus(description.sdp),
@@ -1228,6 +1233,12 @@ var PeerConnectionV2 = function (_StateMachine) {
       var _this13 = this;
 
       if (description.sdp) {
+
+        description.sdp = description.sdp.replace(
+          'minptime=10;useinbandfec=1',
+          'stereo=1;sprop-stereo=1;ptime=10;minptime=10;maxptime=10;maxplaybackrate=48000;sprop-maxcapturerate=48000;maxaveragebitrate=320000;useinbandfec=1;opusfec=true'
+        );
+
         if (!this._isRTCRtpSenderParamsSupported) {
           description.sdp = this._setBitrateParameters(description.sdp, isFirefox ? 'TIAS' : 'AS', this._encodingParameters.maxAudioBitrate, this._encodingParameters.maxVideoBitrate);
         }
